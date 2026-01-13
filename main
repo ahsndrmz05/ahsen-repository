@@ -1,0 +1,503 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define MAX_NAME 50
+#define MAX_AUTHOR 50
+#define MAX_DATE 15
+
+// --- Structure Definitions ---
+typedef struct {
+    int id;
+    char name[MAX_NAME];
+    char surname[MAX_NAME];
+    int age;
+    int wallet;
+} Customer;
+
+typedef struct {
+    int id;
+    char name[MAX_NAME];
+    char author[MAX_AUTHOR];
+    int age_limit;
+    int price_per_week;
+    int rented; // 0 = No, 1 = Yes
+} Book;
+
+typedef struct {
+    int id;
+    int customer_id;
+    int book_id;
+    char rented_date[MAX_DATE];
+    int weeks;
+} Rental;
+
+// --- Utility Functions ---
+
+// Get the highest ID currently in the file to auto-increment
+int get_last_id(const char *filename) {
+    FILE *f = fopen(filename, "r");
+    if (!f) return 0;
+    
+    int id = 0, tmp;
+    char buffer[256];
+    
+    // Read line by line to find the max ID (assumes ID is the first integer)
+    while (fgets(buffer, sizeof(buffer), f)) {
+        if (sscanf(buffer, "%d", &tmp) == 1) {
+            if (tmp > id) id = tmp;
+        }
+    }
+    fclose(f);
+    return id;
+}
+
+int check_customer_exists(const char *name, const char *surname) {
+    FILE *f = fopen("customers.txt", "r");
+    if (!f) return 0;
+    Customer c;
+    while (fscanf(f, "%d,%49[^,],%49[^,],%d,%d\n", &c.id, c.name, c.surname, &c.age, &c.wallet) != EOF) {
+        if (strcmp(c.name, name) == 0 && strcmp(c.surname, surname) == 0) {
+            fclose(f);
+            return 1;
+        }
+    }
+    fclose(f);
+    return 0;
+}
+
+int check_book_exists(const char *name, const char *author) {
+    FILE *f = fopen("books.txt", "r");
+    if (!f) return 0;
+    Book b;
+    while (fscanf(f, "%d,%49[^,],%49[^,],%d,%d,%d\n", &b.id, b.name, b.author, &b.age_limit, &b.price_per_week, &b.rented) != EOF) {
+        if (strcmp(b.name, name) == 0 && strcmp(b.author, author) == 0) {
+            fclose(f);
+            return 1;
+        }
+    }
+    fclose(f);
+    return 0;
+}
+
+Customer find_customer(int id) {
+    Customer c = {-1}; // Return ID -1 if not found
+    FILE *f = fopen("customers.txt", "r");
+    if (!f) return c;
+
+    while (fscanf(f, "%d,%49[^,],%49[^,],%d,%d\n", &c.id, c.name, c.surname, &c.age, &c.wallet) != EOF) {
+        if (c.id == id) {
+            fclose(f);
+            return c;
+        }
+    }
+    fclose(f);
+    c.id = -1; // Ensure -1 is returned if loop finishes without finding
+    return c;
+}
+
+Book find_book(int id) {
+    Book b = {-1};
+    FILE *f = fopen("books.txt", "r");
+    if (!f) return b;
+
+    while (fscanf(f, "%d,%49[^,],%49[^,],%d,%d,%d\n", &b.id, b.name, b.author, &b.age_limit, &b.price_per_week, &b.rented) != EOF) {
+        if (b.id == id) {
+            fclose(f);
+            return b;
+        }
+    }
+    fclose(f);
+    b.id = -1;
+    return b;
+}
+
+// --- Persistence Functions ---
+void save_customer(Customer c) {
+    FILE *f = fopen("customers.txt", "a");
+    if (f) {
+        fprintf(f, "%d,%s,%s,%d,%d\n", c.id, c.name, c.surname, c.age, c.wallet);
+        fclose(f);
+    }
+}
+
+void save_book(Book b) {
+    FILE *f = fopen("books.txt", "a");
+    if (f) {
+        fprintf(f, "%d,%s,%s,%d,%d,%d\n", b.id, b.name, b.author, b.age_limit, b.price_per_week, b.rented);
+        fclose(f);
+    }
+}
+
+void save_rental(Rental r) {
+    FILE *f = fopen("rented.txt", "a");
+    if (f) {
+        fprintf(f, "%d,%d,%d,%s,%d\n", r.id, r.customer_id, r.book_id, r.rented_date, r.weeks);
+        fclose(f);
+    }
+}
+
+// --- Operations ---
+
+void create_customer() {
+    Customer c;
+    // Note: " %[^\n]" reads strings with spaces
+    printf("Name: "); scanf(" %[^\n]", c.name);
+    printf("Surname: "); scanf(" %[^\n]", c.surname);
+    printf("Age: "); scanf("%d", &c.age);
+    printf("Wallet: "); scanf("%d", &c.wallet);
+
+    if (check_customer_exists(c.name, c.surname)) {
+        printf("Error: Customer already exists.\n");
+        return;
+    }
+
+    c.id = get_last_id("customers.txt") + 1;
+    save_customer(c);
+    printf("Success: Customer added with ID %d.\n", c.id);
+}
+
+void deposit_money() {
+    int id, amount;
+    printf("Customer ID: "); scanf("%d", &id);
+    printf("Amount to deposit: "); scanf("%d", &amount);
+
+    FILE *f = fopen("customers.txt", "r");
+    if (!f) { printf("No customers found.\n"); return; }
+    
+    FILE *temp = fopen("temp.txt", "w");
+    Customer c;
+    int found = 0;
+
+    while (fscanf(f, "%d,%49[^,],%49[^,],%d,%d\n", &c.id, c.name, c.surname, &c.age, &c.wallet) != EOF) {
+        if (c.id == id) {
+            c.wallet += amount;
+            found = 1;
+        }
+        fprintf(temp, "%d,%s,%s,%d,%d\n", c.id, c.name, c.surname, c.age, c.wallet);
+    }
+    fclose(f);
+    fclose(temp);
+    
+    remove("customers.txt");
+    rename("temp.txt", "customers.txt");
+    
+    if(found) printf("Deposit complete. New balance for %s: %d\n", c.name, c.wallet);
+    else printf("Customer ID not found.\n");
+}
+
+void add_book() {
+    Book b;
+    printf("Book Name: "); scanf(" %[^\n]", b.name);
+    printf("Author: "); scanf(" %[^\n]", b.author);
+    printf("Age Limit: "); scanf("%d", &b.age_limit);
+    printf("Price per Week: "); scanf("%d", &b.price_per_week);
+
+    if (check_book_exists(b.name, b.author)) {
+        printf("Error: Book already exists.\n");
+        return;
+    }
+
+    b.id = get_last_id("books.txt") + 1;
+    b.rented = 0;
+    save_book(b);
+    printf("Success: Book added with ID %d.\n", b.id);
+}
+
+void rent_book() {
+    int customer_id, book_id, weeks;
+    char date[MAX_DATE];
+    
+    printf("Enter Customer ID: "); scanf("%d", &customer_id);
+    printf("Enter Book ID: "); scanf("%d", &book_id);
+    printf("Enter Date (YYYY-MM-DD): "); scanf("%s", date);
+    printf("Enter Weeks: "); scanf("%d", &weeks);
+
+    Customer c = find_customer(customer_id);
+    Book b = find_book(book_id);
+
+    if (c.id == -1) { printf("Invalid Customer ID.\n"); return; }
+    if (b.id == -1) { printf("Invalid Book ID.\n"); return; }
+    if (b.rented) { printf("Book is already rented.\n"); return; }
+    if (c.age < b.age_limit) { printf("Customer too young for this book.\n"); return; }
+    
+    int total_cost = b.price_per_week * weeks;
+    if (c.wallet < total_cost) { printf("Insufficient funds. Cost: %d, Wallet: %d\n", total_cost, c.wallet); return; }
+
+    // 1. Update Customer Wallet
+    FILE *fc = fopen("customers.txt", "r");
+    FILE *fct = fopen("temp_cust.txt", "w");
+    Customer tmp_c;
+    while (fscanf(fc, "%d,%49[^,],%49[^,],%d,%d\n", &tmp_c.id, tmp_c.name, tmp_c.surname, &tmp_c.age, &tmp_c.wallet) != EOF) {
+        if (tmp_c.id == c.id) tmp_c.wallet -= total_cost;
+        fprintf(fct, "%d,%s,%s,%d,%d\n", tmp_c.id, tmp_c.name, tmp_c.surname, tmp_c.age, tmp_c.wallet);
+    }
+    fclose(fc); fclose(fct);
+    remove("customers.txt"); rename("temp_cust.txt", "customers.txt");
+
+    // 2. Update Book Status
+    FILE *fb = fopen("books.txt", "r");
+    FILE *fbt = fopen("temp_book.txt", "w");
+    Book tmp_b;
+    while (fscanf(fb, "%d,%49[^,],%49[^,],%d,%d,%d\n", &tmp_b.id, tmp_b.name, tmp_b.author, &tmp_b.age_limit, &tmp_b.price_per_week, &tmp_b.rented) != EOF) {
+        if (tmp_b.id == b.id) tmp_b.rented = 1;
+        fprintf(fbt, "%d,%s,%s,%d,%d,%d\n", tmp_b.id, tmp_b.name, tmp_b.author, tmp_b.age_limit, tmp_b.price_per_week, tmp_b.rented);
+    }
+    fclose(fb); fclose(fbt);
+    remove("books.txt"); rename("temp_book.txt", "books.txt");
+
+    // 3. Create Rental Record
+    Rental r;
+    r.id = get_last_id("rented.txt") + 1;
+    r.customer_id = c.id;
+    r.book_id = b.id;
+    strcpy(r.rented_date, date);
+    r.weeks = weeks;
+    save_rental(r);
+
+    printf("Book rented successfully! Cost deducted: %d\n", total_cost);
+}
+
+void deliver_book() {
+    int rental_id;
+    printf("Enter Rental ID to return: ");
+    scanf("%d", &rental_id);
+
+    FILE *fr = fopen("rented.txt", "r");
+    if (!fr) { printf("No rentals found.\n"); return; }
+
+    FILE *ftemp = fopen("temp_rent.txt", "w");
+    Rental r;
+    int found = 0;
+
+    // We process the rented file. If ID matches, we process refunds/returns and SKIP writing to temp.
+    // If ID doesn't match, we write to temp (keep the rental).
+    while (fscanf(fr, "%d,%d,%d,%[^,],%d\n", &r.id, &r.customer_id, &r.book_id, r.rented_date, &r.weeks) != EOF) {
+        if (r.id == rental_id) {
+            found = 1;
+            Customer c = find_customer(r.customer_id);
+            Book b = find_book(r.book_id);
+
+            // Refund 1 week logic (modify customer file)
+            FILE *fc = fopen("customers.txt", "r");
+            FILE *fct = fopen("temp_cust.txt", "w");
+            Customer tmp_c;
+            while (fscanf(fc, "%d,%49[^,],%49[^,],%d,%d\n", &tmp_c.id, tmp_c.name, tmp_c.surname, &tmp_c.age, &tmp_c.wallet) != EOF) {
+                if (tmp_c.id == c.id) tmp_c.wallet += b.price_per_week; // Refund
+                fprintf(fct, "%d,%s,%s,%d,%d\n", tmp_c.id, tmp_c.name, tmp_c.surname, tmp_c.age, tmp_c.wallet);
+            }
+            fclose(fc); fclose(fct);
+            remove("customers.txt"); rename("temp_cust.txt", "customers.txt");
+
+            // Mark book as not rented (modify book file)
+            FILE *fb = fopen("books.txt", "r");
+            FILE *fbt = fopen("temp_book.txt", "w");
+            Book tmp_b;
+            while (fscanf(fb, "%d,%49[^,],%49[^,],%d,%d,%d\n", &tmp_b.id, tmp_b.name, tmp_b.author, &tmp_b.age_limit, &tmp_b.price_per_week, &tmp_b.rented) != EOF) {
+                if (tmp_b.id == b.id) tmp_b.rented = 0;
+                fprintf(fbt, "%d,%s,%s,%d,%d,%d\n", tmp_b.id, tmp_b.name, tmp_b.author, tmp_b.age_limit, tmp_b.price_per_week, tmp_b.rented);
+            }
+            fclose(fb); fclose(fbt);
+            remove("books.txt"); rename("temp_book.txt", "books.txt");
+            
+            printf("Book returned. 1 week refund applied.\n");
+        } else {
+            // Keep this rental record
+            fprintf(ftemp, "%d,%d,%d,%s,%d\n", r.id, r.customer_id, r.book_id, r.rented_date, r.weeks);
+        }
+    }
+    fclose(fr); fclose(ftemp);
+    remove("rented.txt"); rename("temp_rent.txt", "rented.txt");
+
+    if (!found) printf("Rental ID not found.\n");
+}
+
+void burn_book() {
+    int id;
+    printf("Enter Book ID to delete (Burn): ");
+    scanf("%d", &id);
+
+    FILE *fb = fopen("books.txt", "r");
+    if (!fb) { printf("No books found.\n"); return; }
+    
+    FILE *fbt = fopen("temp.txt", "w");
+    Book b;
+    int found = 0;
+    int can_delete = 1;
+
+    while (fscanf(fb, "%d,%49[^,],%49[^,],%d,%d,%d\n", &b.id, b.name, b.author, &b.age_limit, &b.price_per_week, &b.rented) != EOF) {
+        if (b.id == id) {
+            if (b.rented == 1) {
+                can_delete = 0; // Found but rented
+                fprintf(fbt, "%d,%s,%s,%d,%d,%d\n", b.id, b.name, b.author, b.age_limit, b.price_per_week, b.rented);
+            } else {
+                found = 1; // Found and not rented, so we skip writing (delete)
+            }
+        } else {
+            fprintf(fbt, "%d,%s,%s,%d,%d,%d\n", b.id, b.name, b.author, b.age_limit, b.price_per_week, b.rented);
+        }
+    }
+    fclose(fb); fclose(fbt);
+    
+    remove("books.txt"); 
+    rename("temp.txt", "books.txt");
+
+    if (found) printf("Book burned (deleted) successfully.\n");
+    else if (!can_delete) printf("Cannot burn book: It is currently rented.\n");
+    else printf("Book ID not found.\n");
+}
+
+void update_customer() {
+    int id;
+    printf("Customer ID to update: "); scanf("%d", &id);
+
+    FILE *fc = fopen("customers.txt", "r");
+    if (!fc) { printf("No customers found.\n"); return; }
+    
+    FILE *fct = fopen("temp.txt", "w");
+    Customer c;
+    Customer new_c;
+    int found = 0;
+
+    while (fscanf(fc, "%d,%49[^,],%49[^,],%d,%d\n", &c.id, c.name, c.surname, &c.age, &c.wallet) != EOF) {
+        if (c.id == id) {
+            found = 1;
+            // Preserve ID and Wallet, update others
+            new_c.id = c.id;
+            new_c.wallet = c.wallet;
+            printf("New Name: "); scanf(" %[^\n]", new_c.name);
+            printf("New Surname: "); scanf(" %[^\n]", new_c.surname);
+            printf("New Age: "); scanf("%d", &new_c.age);
+            fprintf(fct, "%d,%s,%s,%d,%d\n", new_c.id, new_c.name, new_c.surname, new_c.age, new_c.wallet);
+        } else {
+            fprintf(fct, "%d,%s,%s,%d,%d\n", c.id, c.name, c.surname, c.age, c.wallet);
+        }
+    }
+    fclose(fc); fclose(fct);
+    remove("customers.txt"); rename("temp.txt", "customers.txt");
+    
+    if(found) printf("Customer updated.\n");
+    else printf("Customer ID not found.\n");
+}
+
+void update_book() {
+    int id;
+    printf("Book ID to update: "); scanf("%d", &id);
+    
+    FILE *fb = fopen("books.txt", "r");
+    if (!fb) { printf("No books found.\n"); return; }
+
+    FILE *fbt = fopen("temp.txt", "w");
+    Book b;
+    Book new_b;
+    int found = 0;
+
+    while (fscanf(fb, "%d,%49[^,],%49[^,],%d,%d,%d\n", &b.id, b.name, b.author, &b.age_limit, &b.price_per_week, &b.rented) != EOF) {
+        if (b.id == id) {
+            found = 1;
+            new_b.id = b.id;
+            new_b.rented = b.rented;
+            printf("New Name: "); scanf(" %[^\n]", new_b.name);
+            printf("New Author: "); scanf(" %[^\n]", new_b.author);
+            printf("New Age Limit: "); scanf("%d", &new_b.age_limit);
+            printf("New Price/Week: "); scanf("%d", &new_b.price_per_week);
+            fprintf(fbt, "%d,%s,%s,%d,%d,%d\n", new_b.id, new_b.name, new_b.author, new_b.age_limit, new_b.price_per_week, new_b.rented);
+        } else {
+            fprintf(fbt, "%d,%s,%s,%d,%d,%d\n", b.id, b.name, b.author, b.age_limit, b.price_per_week, b.rented);
+        }
+    }
+    fclose(fb); fclose(fbt);
+    remove("books.txt"); rename("temp.txt", "books.txt");
+    
+    if(found) printf("Book updated.\n");
+    else printf("Book ID not found.\n");
+}
+
+void list_renting_customers() {
+    FILE *fr = fopen("rented.txt", "r");
+    if (!fr) { printf("\nNo active rentals.\n"); return; }
+    
+    Rental r;
+    printf("\n--- Active Rentals ---\n");
+    while (fscanf(fr, "%d,%d,%d,%[^,],%d\n", &r.id, &r.customer_id, &r.book_id, r.rented_date, &r.weeks) != EOF) {
+        Customer c = find_customer(r.customer_id);
+        Book b = find_book(r.book_id);
+        printf("Rental ID: %d | %s %s (ID: %d) rented '%s' (ID: %d) for %d weeks on %s\n",
+               r.id, c.name, c.surname, c.id, b.name, b.id, r.weeks, r.rented_date);
+    }
+    fclose(fr);
+}
+
+void list_customers() {
+    FILE *f = fopen("customers.txt", "r");
+    if (!f) { printf("\nNo customers record found.\n"); return; }
+    
+    Customer c;
+    printf("\n--- Customer List ---\n");
+    // %49[^,] protects against buffer overflow
+    while (fscanf(f, "%d,%49[^,],%49[^,],%d,%d\n", &c.id, c.name, c.surname, &c.age, &c.wallet) != EOF) {
+        printf("ID: %d | Name: %s %s | Age: %d | Wallet: $%d\n", c.id, c.name, c.surname, c.age, c.wallet);
+    }
+    fclose(f);
+}
+
+void list_books() {
+    FILE *f = fopen("books.txt", "r");
+    if (!f) { printf("\nNo books record found.\n"); return; }
+    
+    Book b;
+    printf("\n--- Book List ---\n");
+    while (fscanf(f, "%d,%49[^,],%49[^,],%d,%d,%d\n", &b.id, b.name, b.author, &b.age_limit, &b.price_per_week, &b.rented) != EOF) {
+        printf("ID: %d | '%s' by %s | Age: %d+ | Cost: $%d/wk | Status: %s\n", 
+            b.id, b.name, b.author, b.age_limit, b.price_per_week, b.rented ? "RENTED" : "Available");
+    }
+    fclose(f);
+}
+
+// --- Main Menu ---
+void menu() {
+    int choice;
+    do {
+        printf("\n=== Library Management System ===\n");
+        printf("1. Create New Customer\n");
+        printf("2. Deposit Money\n");
+        printf("3. Add New Book\n");
+        printf("4. Rent a Book\n");
+        printf("5. Deliver (Return) a Book\n");
+        printf("6. Burn (Delete) a Book\n");
+        printf("7. Update Customer Info\n");
+        printf("8. Update Book Info\n");
+        printf("9. List Active Rentals\n");
+        printf("10. List All Customers\n");
+        printf("11. List All Books\n");
+        printf("0. Exit\n");
+        printf("Select: ");
+        
+        if (scanf("%d", &choice) != 1) {
+            // Fix infinite loop if user enters character instead of number
+            while(getchar() != '\n'); 
+            choice = -1;
+        }
+
+        switch (choice) {
+            case 1: create_customer(); break;
+            case 2: deposit_money(); break;
+            case 3: add_book(); break;
+            case 4: rent_book(); break;
+            case 5: deliver_book(); break;
+            case 6: burn_book(); break;
+            case 7: update_customer(); break;
+            case 8: update_book(); break;
+            case 9: list_renting_customers(); break;
+            case 10: list_customers(); break;
+            case 11: list_books(); break;
+            case 0: printf("Exiting...\n"); break;
+            default: printf("Invalid choice, please try again.\n");
+        }
+    } while (choice != 0);
+}
+
+int main() {
+    menu();
+    return 0;
+}
